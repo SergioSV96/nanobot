@@ -246,7 +246,8 @@ class AgentLoop:
         return OutboundMessage(
             channel=msg.channel,
             chat_id=msg.chat_id,
-            content=final_content
+            content=final_content,
+            reasoning_content=response.reasoning_content if response else None,
         )
     
     async def _process_system_message(self, msg: InboundMessage) -> OutboundMessage | None:
@@ -356,7 +357,7 @@ class AgentLoop:
         session_key: str = "cli:direct",
         channel: str = "cli",
         chat_id: str = "direct",
-    ) -> str:
+    ) -> OutboundMessage | None:
         """
         Process a message directly (for CLI or cron usage).
         
@@ -367,7 +368,7 @@ class AgentLoop:
             chat_id: Source chat ID (for context).
         
         Returns:
-            The agent's response.
+            The agent's response message.
         """
         msg = InboundMessage(
             channel=channel,
@@ -376,5 +377,4 @@ class AgentLoop:
             content=content
         )
         
-        response = await self._process_message(msg)
-        return response.content if response else ""
+        return await self._process_message(msg)
