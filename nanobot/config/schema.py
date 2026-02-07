@@ -176,12 +176,12 @@ class Config(BaseSettings):
     def get_api_base(self, model: str | None = None) -> str | None:
         """Get API base URL based on model name."""
         model = (model or self.agents.defaults.model).lower()
+        if "vllm" in model:
+            return self.providers.vllm.api_base
         if "openrouter" in model:
             return self.providers.openrouter.api_base or "https://openrouter.ai/api/v1"
         if any(k in model for k in ("zhipu", "glm", "zai")):
             return self.providers.zhipu.api_base
-        if "vllm" in model:
-            return self.providers.vllm.api_base
         return None
     
     class Config:
