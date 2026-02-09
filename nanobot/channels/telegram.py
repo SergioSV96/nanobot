@@ -7,8 +7,8 @@ import re
 from typing import TYPE_CHECKING
 
 from loguru import logger
-from telegram import Update
-from telegram.ext import Application, MessageHandler, filters, ContextTypes
+from telegram import Update, BotCommand
+from telegram.ext import Application, MessageHandler, filters, ContextTypes, CommandHandler
 
 from nanobot.bus.events import OutboundMessage
 from nanobot.bus.queue import MessageBus
