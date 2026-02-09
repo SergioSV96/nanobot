@@ -4,7 +4,7 @@ import asyncio
 import re
 
 from loguru import logger
-from telegram import Update
+from telegram import Update, constants
 from telegram.ext import Application, MessageHandler, filters, ContextTypes
 
 from nanobot.bus.events import OutboundMessage
@@ -91,6 +91,7 @@ class TelegramChannel(BaseChannel):
         self.groq_api_key = groq_api_key
         self._app: Application | None = None
         self._chat_ids: dict[str, int] = {}  # Map sender_id to chat_id for replies
+        self._typing_tasks: dict[int, asyncio.Task] = {}  # Map chat_id -> typing task
     
     async def start(self) -> None:
         """Start the Telegram bot with long polling."""
@@ -143,6 +144,11 @@ class TelegramChannel(BaseChannel):
         """Stop the Telegram bot."""
         self._running = False
         
+        # Cancel all typing tasks
+        for task in self._typing_tasks.values():
+            task.cancel()
+        self._typing_tasks.clear()
+        
         if self._app:
             logger.info("Stopping Telegram bot...")
             await self._app.updater.stop()
@@ -159,6 +165,10 @@ class TelegramChannel(BaseChannel):
         try:
             # chat_id should be the Telegram chat ID (integer)
             chat_id = int(msg.chat_id)
+            
+            # Stop typing indicator
+            await self._stop_typing(chat_id)
+            
             # Convert markdown to Telegram HTML
             html_content = _markdown_to_telegram_html(msg.content)
             await self._app.bot.send_message(
@@ -206,6 +216,9 @@ class TelegramChannel(BaseChannel):
         
         # Store chat_id for replies
         self._chat_ids[sender_id] = chat_id
+        
+        # Start typing indicator immediately
+        await self._start_typing(chat_id)
         
         # Build content from text and/or media
         content_parts = []
@@ -286,6 +299,36 @@ class TelegramChannel(BaseChannel):
                 "is_group": message.chat.type != "private"
             }
         )
+    
+    async def _start_typing(self, chat_id: int) -> None:
+        """Start periodic typing indicator for a chat."""
+        # Stop any existing task for this chat
+        await self._stop_typing(chat_id)
+        
+        async def typing_loop():
+            # Stop after 120s to prevent infinite loops
+            # Telegram typing lasts ~5s, we refresh every 4s
+            steps = 30  # 120s / 4s = 30
+            try:
+                for _ in range(steps):
+                    if self._app:
+                        await self._app.bot.send_chat_action(
+                            chat_id=chat_id, 
+                            action=constants.ChatAction.TYPING
+                        )
+                    await asyncio.sleep(4.0)
+            except asyncio.CancelledError:
+                pass
+            except Exception as e:
+                logger.error(f"Error in typing loop: {e}")
+        
+        self._typing_tasks[chat_id] = asyncio.create_task(typing_loop())
+    
+    async def _stop_typing(self, chat_id: int) -> None:
+        """Stop typing indicator for a chat."""
+        task = self._typing_tasks.pop(chat_id, None)
+        if task:
+            task.cancel()
     
     def _get_extension(self, media_type: str, mime_type: str | None) -> str:
         """Get file extension based on media type."""
